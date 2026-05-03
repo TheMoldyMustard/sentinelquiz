@@ -36,7 +36,7 @@ export default function MultipleChoiceMode({
     );
     if (wrong.length > 0) {
       const toEliminate = wrong[Math.floor(Math.random() * wrong.length)];
-      setEliminated((prev) => new Set([...prev, toEliminate]));
+      setEliminated((prev) => new Set(Array.from(prev).concat(toEliminate)));
     }
     onHint();
   };
