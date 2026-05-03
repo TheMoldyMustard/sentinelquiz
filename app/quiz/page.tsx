@@ -4,11 +4,13 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import QuizEngine from "@/components/QuizEngine";
-import type { QuizItem, QuizMode } from "@/types/quiz";
+import type { QuestionType, QuizItem, QuizMode } from "@/types/quiz";
 
 interface QuizSession {
   items: QuizItem[];
   mode: QuizMode;
+  selectedModes?: QuestionType[];
+  perfectionistMode?: boolean;
 }
 
 export default function QuizPage() {
@@ -93,6 +95,8 @@ export default function QuizPage() {
           <QuizEngine
             items={session.items}
             mode={session.mode}
+            selectedModes={session.selectedModes}
+            perfectionistMode={session.perfectionistMode}
             onReset={handleReset}
           />
         </motion.div>

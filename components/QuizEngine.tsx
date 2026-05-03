@@ -1,34 +1,42 @@
 "use client";
 
-import { useReducer, useCallback } from "react";
+import { useEffect, useReducer, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { fsmReducer, createInitialContext, getCurrentItem, getProgress, getFinalStats } from "@/lib/fsm";
 import IdentificationMode from "./IdentificationMode";
 import MultipleChoiceMode from "./MultipleChoiceMode";
+import MultipleSelectMode from "./MultipleSelectMode";
 import ScoreDisplay from "./ScoreDisplay";
-import type { QuizItem, QuizMode } from "@/types/quiz";
+import type { QuestionType, QuizItem, QuizMode } from "@/types/quiz";
 
 interface QuizEngineProps {
   items: QuizItem[];
   mode: QuizMode;
+  selectedModes?: QuestionType[];
+  perfectionistMode?: boolean;
   onComplete?: (stats: ReturnType<typeof getFinalStats>) => void;
   onReset: () => void;
 }
 
-export default function QuizEngine({ items, mode, onComplete, onReset }: QuizEngineProps) {
+export default function QuizEngine({
+  items,
+  mode,
+  selectedModes,
+  perfectionistMode = false,
+  onComplete,
+  onReset,
+}: QuizEngineProps) {
   const [ctx, dispatch] = useReducer(fsmReducer, {
     ...createInitialContext(),
     state: "idle",
   });
 
-  // Auto-start
-  const started = ctx.state !== "idle";
-  if (!started) {
-    dispatch({ type: "START", items, mode });
-  }
+  useEffect(() => {
+    dispatch({ type: "START", items, mode, selectedModes, perfectionistMode });
+  }, [items, mode, selectedModes, perfectionistMode]);
 
   const handleSubmit = useCallback(
-    (answer: string) => dispatch({ type: "SUBMIT_ANSWER", answer }),
+    (answer: string | string[]) => dispatch({ type: "SUBMIT_ANSWER", answer }),
     []
   );
   const handleHint = useCallback(() => dispatch({ type: "USE_HINT" }), []);
@@ -64,6 +72,12 @@ export default function QuizEngine({ items, mode, onComplete, onReset }: QuizEng
             {ctx.score} PTS
           </span>
         </div>
+        {ctx.perfectionistMode && (
+          <div className="flex items-center justify-between font-mono text-xs text-sentinel-danger">
+            <span>PERFECTIONIST MODE ACTIVE</span>
+            {ctx.voidCount > 0 && <span>VOIDS: {ctx.voidCount}</span>}
+          </div>
+        )}
 
         {/* Progress bar */}
         <div className="progress-bar">
@@ -80,21 +94,31 @@ export default function QuizEngine({ items, mode, onComplete, onReset }: QuizEng
       <AnimatePresence mode="wait">
         {!isAnswered ? (
           <motion.div
-            key={`question-${ctx.currentIndex}`}
+            key={`question-${ctx.voidCount}-${ctx.currentIndex}`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            {ctx.mode === "identification" ? (
+            {currentItem.type === "identification" ? (
               <IdentificationMode
                 item={currentItem}
                 hintUsed={ctx.state === "hint_used"}
                 onSubmit={handleSubmit}
                 onHint={handleHint}
                 disabled={false}
+                perfectionistMode={ctx.perfectionistMode}
+              />
+            ) : currentItem.type === "multiple_choice" ? (
+              <MultipleChoiceMode
+                item={currentItem}
+                choices={ctx.shuffledChoices ?? []}
+                hintUsed={ctx.state === "hint_used"}
+                onSubmit={handleSubmit}
+                onHint={handleHint}
+                disabled={false}
               />
             ) : (
-              <MultipleChoiceMode
+              <MultipleSelectMode
                 item={currentItem}
                 choices={ctx.shuffledChoices ?? []}
                 hintUsed={ctx.state === "hint_used"}
@@ -141,7 +165,7 @@ export default function QuizEngine({ items, mode, onComplete, onReset }: QuizEng
                 <div className="space-y-1">
                   <span className="section-label">Correct Answer</span>
                   <p className="font-mono text-sm text-sentinel-accent">
-                    {currentItem.answer}
+                    {currentItem.accepted_answers.join(", ")}
                   </p>
                 </div>
               )}
@@ -151,7 +175,7 @@ export default function QuizEngine({ items, mode, onComplete, onReset }: QuizEng
             <div className="space-y-1">
               <span className="section-label">Question</span>
               <p className="text-sentinel-text-dim text-sm font-body">
-                {currentItem.question}
+                {currentItem.prompt}
               </p>
             </div>
 

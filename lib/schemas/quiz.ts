@@ -1,33 +1,61 @@
 import { z } from "zod";
 
-// ─── Raw Item Schema (validates imported JSON) ────────────────────────────────
+const AnswerString = z
+  .string()
+  .min(1, "answer cannot be empty")
+  .max(500, "answer must be under 500 characters")
+  .trim();
 
-const QuizItemRawSchema = z.object({
-  question: z
-    .string({ required_error: "question is required" })
-    .min(3, "question must be at least 3 characters")
-    .max(1000, "question must be under 1000 characters")
-    .trim(),
+const PromptString = z
+  .string({ required_error: "prompt is required" })
+  .min(3, "prompt must be at least 3 characters")
+  .max(1000, "prompt must be under 1000 characters")
+  .trim();
 
-  answer: z
-    .string({ required_error: "answer is required" })
-    .min(1, "answer must be at least 1 character")
-    .max(500, "answer must be under 500 characters")
-    .trim(),
+export const QuestionSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("identification"),
+    prompt: PromptString,
+    accepted_answers: z.array(AnswerString).min(1),
+    options: z.array(AnswerString).length(4),
+  }),
+  z.object({
+    type: z.literal("multiple_choice"),
+    prompt: PromptString,
+    accepted_answers: z.array(AnswerString).length(1),
+    options: z.array(AnswerString).length(4),
+  }),
+  z.object({
+    type: z.literal("multiple_select"),
+    prompt: PromptString,
+    accepted_answers: z.array(AnswerString).min(2),
+    options: z.array(AnswerString).min(4),
+  }),
+]);
 
-  distractors: z
-    .array(
-      z
-        .string()
-        .min(1, "distractor cannot be empty")
-        .max(500, "distractor must be under 500 characters")
-        .trim()
-    )
-    .length(3, "distractors must contain exactly 3 items"),
-});
+const LegacyQuizItemSchema = z
+  .object({
+    question: z
+      .string({ required_error: "question is required" })
+      .min(3, "question must be at least 3 characters")
+      .max(1000, "question must be under 1000 characters")
+      .trim(),
+    answer: AnswerString,
+    distractors: z
+      .array(AnswerString)
+      .length(3, "distractors must contain exactly 3 items"),
+  })
+  .transform((raw) => ({
+    type: "identification" as const,
+    prompt: raw.question,
+    accepted_answers: [raw.answer],
+    options: [raw.answer, ...raw.distractors],
+  }));
+
+const QuizItemImportSchema = z.union([QuestionSchema, LegacyQuizItemSchema]);
 
 export const QuizImportSchema = z
-  .array(QuizItemRawSchema, {
+  .array(QuizItemImportSchema, {
     required_error: "Expected an array of quiz items",
     invalid_type_error: "Root element must be an array",
   })
@@ -35,8 +63,7 @@ export const QuizImportSchema = z
   .max(500, "Quiz cannot exceed 500 items");
 
 export type ValidatedQuizImport = z.infer<typeof QuizImportSchema>;
-
-// ─── Validation Helper ────────────────────────────────────────────────────────
+export type ValidatedQuestion = z.infer<typeof QuestionSchema>;
 
 export interface SchemaValidationResult {
   success: boolean;

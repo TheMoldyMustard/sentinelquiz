@@ -10,6 +10,7 @@ interface IdentificationModeProps {
   onSubmit: (answer: string) => void;
   onHint: () => void;
   disabled?: boolean;
+  perfectionistMode?: boolean;
 }
 
 export default function IdentificationMode({
@@ -18,6 +19,7 @@ export default function IdentificationMode({
   onSubmit,
   onHint,
   disabled = false,
+  perfectionistMode = false,
 }: IdentificationModeProps) {
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -33,7 +35,7 @@ export default function IdentificationMode({
   };
 
   const hint = hintUsed
-    ? generateHint(item.answer)
+    ? generateHint(item.accepted_answers[0])
     : null;
 
   return (
@@ -55,7 +57,7 @@ export default function IdentificationMode({
       <div className="space-y-2">
         <span className="section-label">Question</span>
         <p className="text-sentinel-text text-lg font-display leading-relaxed">
-          {item.question}
+          {item.prompt}
         </p>
       </div>
 
@@ -86,7 +88,11 @@ export default function IdentificationMode({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder="Type your answer..."
-            className="input-field text-base"
+            className={`input-field text-base ${
+              perfectionistMode
+                ? "border-sentinel-danger focus:border-sentinel-danger focus:ring-sentinel-danger/20"
+                : ""
+            }`}
             disabled={disabled}
             autoComplete="off"
             autoCorrect="off"

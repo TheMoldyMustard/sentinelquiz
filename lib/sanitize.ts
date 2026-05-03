@@ -1,15 +1,10 @@
 /**
- * Sanitization module — strips HTML/script from all string fields.
- * Uses regex-based stripping (works on both server and client without
- * dynamic imports that can cause webpack chunk errors).
+ * Sanitization module - strips HTML/script from all string fields.
  */
- 
+
 import type { ValidatedQuizImport } from "@/lib/schemas/quiz";
 import type { QuizItem } from "@/types/quiz";
-crypto.randomUUID()
- 
-// ─── HTML stripper (server + client safe) ────────────────────────────────────
- 
+
 function stripHTML(input: string): string {
   return input
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
@@ -26,50 +21,60 @@ function stripHTML(input: string): string {
     .replace(/data:/gi, "data_")
     .trim();
 }
- 
-// ─── Main sanitization function ───────────────────────────────────────────────
- 
+
 export async function sanitizeQuizItems(
   validated: ValidatedQuizImport
 ): Promise<{ items: QuizItem[]; warnings: string[] }> {
   const warnings: string[] = [];
- 
-  const items: QuizItem[] = await Promise.all(
-    validated.map(async (raw, idx) => {
-      const question = stripHTML(raw.question);
-      const answer = stripHTML(raw.answer);
-      const distractors = raw.distractors.map((d) => stripHTML(d));
- 
-      // Warn if sanitization changed content
-      if (question !== raw.question.trim())
-        warnings.push(`Item ${idx + 1}: HTML stripped from question`);
-      if (answer !== raw.answer.trim())
-        warnings.push(`Item ${idx + 1}: HTML stripped from answer`);
- 
-      distractors.forEach((d, i) => {
-        if (d !== raw.distractors[i].trim())
-          warnings.push(`Item ${idx + 1}: HTML stripped from distractor ${i + 1}`);
-      });
- 
-      // Validate answer is not among distractors
-      const lowerAnswer = answer.toLowerCase();
-      const hasConflict = distractors.some(
-        (d) => d.toLowerCase() === lowerAnswer
-      );
-      if (hasConflict) {
-        warnings.push(
-          `Item ${idx + 1}: Answer matches a distractor — duplicates may appear in MC mode`
-        );
+
+  const items = validated.map((raw, idx): QuizItem => {
+    const prompt = stripHTML(raw.prompt);
+    const accepted_answers = raw.accepted_answers.map(stripHTML);
+    const options = raw.options.map(stripHTML);
+
+    if (prompt !== raw.prompt.trim()) {
+      warnings.push(`Item ${idx + 1}: HTML stripped from prompt`);
+    }
+
+    raw.accepted_answers.forEach((answer, answerIdx) => {
+      if (accepted_answers[answerIdx] !== answer.trim()) {
+        warnings.push(`Item ${idx + 1}: HTML stripped from accepted answer ${answerIdx + 1}`);
       }
- 
-      return {
-        id: crypto.randomUUID(),
-        question,
-        answer,
-        distractors: distractors as [string, string, string],
-      };
-    })
-  );
- 
+    });
+
+    raw.options.forEach((option, optionIdx) => {
+      if (options[optionIdx] !== option.trim()) {
+        warnings.push(`Item ${idx + 1}: HTML stripped from option ${optionIdx + 1}`);
+      }
+    });
+
+    const normalizedAnswers = new Set(
+      accepted_answers.map((answer) => answer.toLowerCase())
+    );
+    const matchingOptions = options.filter((option) =>
+      normalizedAnswers.has(option.toLowerCase())
+    );
+
+    if (raw.type !== "multiple_select" && matchingOptions.length !== 1) {
+      warnings.push(
+        `Item ${idx + 1}: exactly one option should match the accepted answer`
+      );
+    }
+
+    if (raw.type === "multiple_select" && matchingOptions.length < 2) {
+      warnings.push(
+        `Item ${idx + 1}: multiple-select options should include at least two accepted answers`
+      );
+    }
+
+    return {
+      id: crypto.randomUUID(),
+      type: raw.type,
+      prompt,
+      accepted_answers,
+      options,
+    };
+  });
+
   return { items, warnings };
 }

@@ -12,11 +12,13 @@
 import type {
   FSMContext,
   FSMEvent,
+  QuestionType,
   QuizItem,
   QuizMode,
   QuizState,
 } from "@/types/quiz";
 import { calculatePoints } from "@/types/quiz";
+import { checkAnswer } from "@/lib/answers";
 
 // ─── Initial State ────────────────────────────────────────────────────────────
 
@@ -26,17 +28,20 @@ export function createInitialContext(): FSMContext {
     items: [],
     currentIndex: 0,
     mode: "identification",
+    selectedModes: ["identification", "multiple_choice", "multiple_select"],
     hintsUsed: 0,
     score: 0,
     answers: [],
     shuffledChoices: undefined,
+    perfectionistMode: false,
+    voidCount: 0,
   };
 }
 
 // ─── Shuffle helper ───────────────────────────────────────────────────────────
 
 function shuffleChoices(item: QuizItem): string[] {
-  const choices = [item.answer, ...item.distractors];
+  const choices = [...item.options];
   for (let i = choices.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [choices[i], choices[j]] = [choices[j], choices[i]];
@@ -50,15 +55,18 @@ export function fsmReducer(ctx: FSMContext, event: FSMEvent): FSMContext {
   switch (event.type) {
     case "START": {
       if (ctx.state !== "idle") return ctx;
-      const items = shuffleArray(event.items);
+      const selectedModes = resolveSelectedModes(event.mode, event.selectedModes);
+      const items = shuffleArray(resolveQuestionModes(event.items, selectedModes));
       const firstItem = items[0];
       return {
         ...createInitialContext(),
         state: "answering",
         items,
         mode: event.mode,
+        selectedModes,
+        perfectionistMode: event.perfectionistMode ?? false,
         shuffledChoices:
-          event.mode === "multiple_choice"
+          firstItem.type === "multiple_choice" || firstItem.type === "multiple_select"
             ? shuffleChoices(firstItem)
             : undefined,
       };
@@ -78,8 +86,38 @@ export function fsmReducer(ctx: FSMContext, event: FSMEvent): FSMContext {
 
       const currentItem = ctx.items[ctx.currentIndex];
       const hintUsed = ctx.state === "hint_used";
-      const isCorrect = normalizeAnswer(event.answer) === normalizeAnswer(currentItem.answer);
-      const pointsEarned = isCorrect ? calculatePoints(ctx.mode, hintUsed) : 0;
+      const isCorrect = checkAnswer(event.answer, currentItem.accepted_answers);
+      const pointsEarned = isCorrect ? calculatePoints(currentItem.type, hintUsed) : 0;
+      const answerRecord = {
+        itemId: currentItem.id,
+        question: currentItem.prompt,
+        correctAnswer: currentItem.accepted_answers.join(", "),
+        userAnswer: Array.isArray(event.answer)
+          ? event.answer.join(", ")
+          : event.answer,
+        correct: isCorrect,
+        hintUsed,
+        pointsEarned,
+        mode: currentItem.type,
+      };
+
+      if (!isCorrect && ctx.perfectionistMode) {
+        const items = shuffleArray(ctx.items);
+        const firstItem = items[0];
+        return {
+          ...createInitialContext(),
+          state: "answering",
+          items,
+          mode: ctx.mode,
+          selectedModes: ctx.selectedModes,
+          perfectionistMode: true,
+          voidCount: ctx.voidCount + 1,
+          shuffledChoices:
+            firstItem.type === "multiple_choice" || firstItem.type === "multiple_select"
+              ? shuffleChoices(firstItem)
+              : undefined,
+        };
+      }
 
       return {
         ...ctx,
@@ -87,16 +125,7 @@ export function fsmReducer(ctx: FSMContext, event: FSMEvent): FSMContext {
         score: ctx.score + pointsEarned,
         answers: [
           ...ctx.answers,
-          {
-            itemId: currentItem.id,
-            question: currentItem.question,
-            correctAnswer: currentItem.answer,
-            userAnswer: event.answer,
-            correct: isCorrect,
-            hintUsed,
-            pointsEarned,
-            mode: ctx.mode,
-          },
+          answerRecord,
         ],
       };
     }
@@ -117,7 +146,7 @@ export function fsmReducer(ctx: FSMContext, event: FSMEvent): FSMContext {
         state: "answering",
         currentIndex: nextIndex,
         shuffledChoices:
-          ctx.mode === "multiple_choice"
+          nextItem.type === "multiple_choice" || nextItem.type === "multiple_select"
             ? shuffleChoices(nextItem)
             : undefined,
       };
@@ -134,10 +163,6 @@ export function fsmReducer(ctx: FSMContext, event: FSMEvent): FSMContext {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function normalizeAnswer(answer: string): string {
-  return answer.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
 function shuffleArray<T>(arr: T[]): T[] {
   const copy = [...arr];
   for (let i = copy.length - 1; i > 0; i--) {
@@ -148,6 +173,31 @@ function shuffleArray<T>(arr: T[]): T[] {
 }
 
 // ─── Derived Getters ──────────────────────────────────────────────────────────
+
+function resolveSelectedModes(
+  mode: QuizMode,
+  selectedModes?: QuestionType[]
+): QuestionType[] {
+  if (selectedModes?.length) return selectedModes;
+  if (mode === "mixed") {
+    return ["identification", "multiple_choice", "multiple_select"];
+  }
+  return [mode];
+}
+
+function resolveQuestionModes(
+  items: QuizItem[],
+  selectedModes: QuestionType[]
+): QuizItem[] {
+  return items.map((item) => {
+    if (selectedModes.includes(item.type)) return item;
+
+    return {
+      ...item,
+      type: selectedModes[Math.floor(Math.random() * selectedModes.length)],
+    };
+  });
+}
 
 export function getCurrentItem(ctx: FSMContext): QuizItem | undefined {
   return ctx.items[ctx.currentIndex];
@@ -161,7 +211,10 @@ export function getProgress(ctx: FSMContext): number {
 export function getFinalStats(ctx: FSMContext) {
   const total = ctx.answers.length;
   const correct = ctx.answers.filter((a) => a.correct).length;
-  const maxPossible = ctx.items.length * calculatePoints(ctx.mode, false);
+  const maxPossible = ctx.items.reduce(
+    (totalScore, item) => totalScore + calculatePoints(item.type, false),
+    0
+  );
   const accuracy = total > 0 ? (correct / total) * 100 : 0;
   const hintsUsed = ctx.answers.filter((a) => a.hintUsed).length;
 

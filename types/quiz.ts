@@ -1,25 +1,29 @@
 // ─── Core Quiz Types ──────────────────────────────────────────────────────────
 
+export type QuestionType =
+  | "identification"
+  | "multiple_choice"
+  | "multiple_select";
+
 export interface QuizItem {
   id: string;
-  question: string;
-  answer: string;
-  distractors: [string, string, string];
+  type: QuestionType;
+  prompt: string;
+  accepted_answers: string[];
+  options: string[];
 }
 
-export interface RawQuizItem {
-  question: string;
-  answer: string;
-  distractors: string[];
-}
+export type RawQuizItem = Omit<QuizItem, "id">;
 
 // ─── Quiz Mode ────────────────────────────────────────────────────────────────
 
-export type QuizMode = "identification" | "multiple_choice";
+export type QuizMode = QuestionType | "mixed";
 
 export const MODE_MULTIPLIER: Record<QuizMode, number> = {
   identification: 1.0,
   multiple_choice: 0.5,
+  multiple_select: 0.75,
+  mixed: 1.0,
 };
 
 export const BASE_POINTS = 100;
@@ -41,10 +45,13 @@ export interface FSMContext {
   items: QuizItem[];
   currentIndex: number;
   mode: QuizMode;
+  selectedModes: QuestionType[];
   hintsUsed: number;
   score: number;
   answers: AnswerRecord[];
   shuffledChoices?: string[];
+  perfectionistMode: boolean;
+  voidCount: number;
 }
 
 export interface AnswerRecord {
@@ -61,8 +68,14 @@ export interface AnswerRecord {
 // ─── FSM Events ───────────────────────────────────────────────────────────────
 
 export type FSMEvent =
-  | { type: "START"; items: QuizItem[]; mode: QuizMode }
-  | { type: "SUBMIT_ANSWER"; answer: string }
+  | {
+      type: "START";
+      items: QuizItem[];
+      mode: QuizMode;
+      selectedModes?: QuestionType[];
+      perfectionistMode?: boolean;
+    }
+  | { type: "SUBMIT_ANSWER"; answer: string | string[] }
   | { type: "USE_HINT" }
   | { type: "NEXT" }
   | { type: "RESET" };

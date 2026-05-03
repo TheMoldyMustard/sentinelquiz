@@ -4,27 +4,94 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import ImportModule from "@/components/ImportModule";
-import type { QuizItem, QuizMode } from "@/types/quiz";
+import {
+  deleteSavedQuiz,
+  loadSavedQuizzes,
+  renameSavedQuiz,
+  saveQuiz,
+  type SavedQuiz,
+} from "@/lib/storage";
+import type { QuestionType, QuizItem } from "@/types/quiz";
 
 
 type AppPhase = "import" | "configure";
+const QUESTION_TYPES: QuestionType[] = [
+  "identification",
+  "multiple_choice",
+  "multiple_select",
+];
 
 export default function HomePage() {
   const router = useRouter();
   const [phase, setPhase] = useState<AppPhase>("import");
   const [items, setItems] = useState<QuizItem[]>([]);
-  const [mode, setMode] = useState<QuizMode>("identification");
+  const [selectedModes, setSelectedModes] = useState<QuestionType[]>(QUESTION_TYPES);
+  const [perfectionistMode, setPerfectionistMode] = useState(false);
+  const [savedQuizzes, setSavedQuizzes] = useState<SavedQuiz[]>([]);
 
-  const handleImport = (imported: QuizItem[]) => {
+  const fallbackCount = items.filter((item) => !selectedModes.includes(item.type)).length;
+
+  useEffect(() => {
+    loadSavedQuizzes()
+      .then(setSavedQuizzes)
+      .catch(() => setSavedQuizzes([]));
+  }, []);
+
+  const handleImport = async (imported: QuizItem[]) => {
     setItems(imported);
+    setSelectedModes(getAvailableModes(imported));
+    try {
+      await saveQuiz(imported);
+      setSavedQuizzes(await loadSavedQuizzes());
+    } catch {
+      // Session import should still work if IndexedDB is unavailable.
+    }
     setTimeout(() => setPhase("configure"), 500);
+  };
+
+  const handleLoadSaved = (quiz: SavedQuiz) => {
+    setItems(quiz.items);
+    setSelectedModes(getAvailableModes(quiz.items));
+    setPhase("configure");
+  };
+
+  const handleRenameSaved = async (quiz: SavedQuiz) => {
+    const nextName = window.prompt("Rename saved quiz", quiz.name);
+    if (!nextName || nextName.trim() === quiz.name) return;
+
+    await renameSavedQuiz(quiz.id, nextName);
+    setSavedQuizzes(await loadSavedQuizzes());
+  };
+
+  const handleDeleteSaved = async (quiz: SavedQuiz) => {
+    const confirmed = window.confirm(`Delete "${quiz.name}" from saved quizzes?`);
+    if (!confirmed) return;
+
+    await deleteSavedQuiz(quiz.id);
+    setSavedQuizzes(await loadSavedQuizzes());
+  };
+
+  const toggleMode = (mode: QuestionType) => {
+    setSelectedModes((current) => {
+      if (current.includes(mode)) {
+        return current.length === 1
+          ? current
+          : current.filter((selected) => selected !== mode);
+      }
+      return [...current, mode];
+    });
   };
 
   const handleStart = () => {
     // Store in sessionStorage for quiz page
     sessionStorage.setItem(
       "sentinelquiz_session",
-      JSON.stringify({ items, mode })
+      JSON.stringify({
+        items,
+        mode: "mixed",
+        selectedModes,
+        perfectionistMode,
+      })
     );
     router.push("/quiz");
   };
@@ -105,6 +172,50 @@ export default function HomePage() {
                   exit={{ opacity: 0 }}
                 >
                   <ImportModule onImport={handleImport} />
+                  {savedQuizzes.length > 0 && (
+                    <div className="mt-6 space-y-3">
+                      <span className="section-label">Saved Quizzes</span>
+                      <div className="space-y-2">
+                        {savedQuizzes.slice(0, 5).map((quiz) => (
+                          <div
+                            key={quiz.id}
+                            className="border border-sentinel-border p-3"
+                          >
+                            <button
+                              onClick={() => handleLoadSaved(quiz)}
+                              className="w-full text-left hover:text-sentinel-accent transition-colors"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="font-mono text-sm text-sentinel-text">
+                                  {quiz.name}
+                                </span>
+                                <span className="font-mono text-xs text-sentinel-muted">
+                                  {quiz.items.length} items
+                                </span>
+                              </div>
+                              <div className="font-mono text-[10px] text-sentinel-muted mt-1">
+                                {new Date(quiz.updatedAt).toLocaleString()}
+                              </div>
+                            </button>
+                            <div className="flex gap-3 mt-3">
+                              <button
+                                onClick={() => handleRenameSaved(quiz)}
+                                className="font-mono text-[10px] text-sentinel-muted hover:text-sentinel-accent transition-colors"
+                              >
+                                RENAME
+                              </button>
+                              <button
+                                onClick={() => handleDeleteSaved(quiz)}
+                                className="font-mono text-[10px] text-sentinel-muted hover:text-sentinel-danger transition-colors"
+                              >
+                                DELETE
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </motion.div>
               ) : (
                 <motion.div
@@ -119,7 +230,7 @@ export default function HomePage() {
                     <span className="text-sentinel-accent text-lg">✓</span>
                     <div>
                       <p className="font-mono text-sm text-sentinel-accent">
-                        {items.length} items cleared security firewall
+                        {items.length} items queued
                       </p>
                       <p className="text-xs text-sentinel-text-dim mt-0.5">
                         Validated via Zod · Sanitized via DOMPurify
@@ -129,11 +240,21 @@ export default function HomePage() {
 
                   {/* Mode selection */}
                   <div className="space-y-3">
-                    <span className="section-label">Quiz Mode</span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <span className="section-label">Quiz Modes</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <ModeCard
-                        active={mode === "identification"}
-                        onClick={() => setMode("identification")}
+                        active={selectedModes.length === QUESTION_TYPES.length}
+                        onClick={() => setSelectedModes(QUESTION_TYPES)}
+                        title="All Modes"
+                        subtitle="Use item types"
+                        multiplier="AUTO"
+                        description="Render each question according to its JSON type."
+                        icon="◆"
+                        iconColor="text-sentinel-accent"
+                      />
+                      <ModeCard
+                        active={selectedModes.includes("identification")}
+                        onClick={() => toggleMode("identification")}
                         title="Identification"
                         subtitle="Free-recall typing"
                         multiplier="×1.0"
@@ -142,8 +263,8 @@ export default function HomePage() {
                         iconColor="text-sentinel-accent"
                       />
                       <ModeCard
-                        active={mode === "multiple_choice"}
-                        onClick={() => setMode("multiple_choice")}
+                        active={selectedModes.includes("multiple_choice")}
+                        onClick={() => toggleMode("multiple_choice")}
                         title="Multiple Choice"
                         subtitle="Select from options"
                         multiplier="×0.5"
@@ -151,8 +272,36 @@ export default function HomePage() {
                         icon="◈"
                         iconColor="text-sentinel-warn"
                       />
+                      <ModeCard
+                        active={selectedModes.includes("multiple_select")}
+                        onClick={() => toggleMode("multiple_select")}
+                        title="Multi Select"
+                        subtitle="Select all that apply"
+                        multiplier="×0.75"
+                        description="Choose every correct option. Partial selections fail."
+                        icon="■"
+                        iconColor="text-sentinel-warn"
+                      />
                     </div>
+                    <p className="text-xs font-mono text-sentinel-muted">
+                      Selected: {formatSelectedModes(selectedModes)}
+                    </p>
                   </div>
+
+                  <label className="flex items-center justify-between gap-4 border border-sentinel-border p-4">
+                    <div>
+                      <span className="section-label">Perfectionist Mode</span>
+                      <p className="text-xs text-sentinel-text-dim mt-1">
+                        Any incorrect answer voids points and restarts from item 1.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={perfectionistMode}
+                      onChange={(event) => setPerfectionistMode(event.target.checked)}
+                      className="h-5 w-5 accent-red-500"
+                    />
+                  </label>
 
                   {/* Scoring legend */}
                   <div className="border border-sentinel-border p-4 space-y-2 font-mono text-xs">
@@ -163,12 +312,18 @@ export default function HomePage() {
                     <div className="text-sentinel-muted space-y-1">
                       <div>B = 100 base points</div>
                       <div>
-                        M = {mode === "identification" ? "1.0 (Identification)" : "0.5 (Multiple Choice)"}
+                        M = per selected question type
                       </div>
                       <div>P = 25 per hint used</div>
                       <div className="text-sentinel-accent mt-2">
                         Max per item:{" "}
-                        {mode === "identification" ? "100" : "50"} pts
+                        {selectedModes.length > 1
+                          ? "varies"
+                          : selectedModes[0] === "identification"
+                          ? "100"
+                          : selectedModes[0] === "multiple_choice"
+                          ? "50"
+                          : "75"} pts
                       </div>
                     </div>
                   </div>
@@ -180,7 +335,10 @@ export default function HomePage() {
                     >
                       ← BACK
                     </button>
-                    <button onClick={handleStart} className="btn-primary flex-1">
+                    <button
+                      onClick={handleStart}
+                      className="btn-primary flex-1"
+                    >
                       BEGIN SESSION →
                     </button>
                   </div>
@@ -264,6 +422,24 @@ function ModeCard({
     </button>
   );
 }
+
+function getAvailableModes(items: QuizItem[]): QuestionType[] {
+  const availableModes = QUESTION_TYPES.filter((type) =>
+    items.some((item) => item.type === type)
+  );
+  return availableModes.length > 0 ? availableModes : QUESTION_TYPES;
+}
+
+function formatSelectedModes(modes: QuestionType[]): string {
+  return modes
+    .map((mode) => {
+      if (mode === "identification") return "Identification";
+      if (mode === "multiple_choice") return "Multiple Choice";
+      return "Multiple Select";
+    })
+    .join(", ");
+}
+
 function OnlineStatus() {
   const [online, setOnline] = useState(true);
 

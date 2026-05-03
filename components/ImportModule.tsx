@@ -13,24 +13,74 @@ interface ImportModuleProps {
 
 const EXAMPLE_JSON = `[
   {
-    "question": "What OSI layer does TLS operate on?",
-    "answer": "Presentation Layer (Layer 6)",
-    "distractors": [
-      "Transport Layer (Layer 4)",
-      "Session Layer (Layer 5)",
-      "Application Layer (Layer 7)"
-    ]
-  },
-  {
-    "question": "What does CSRF stand for?",
-    "answer": "Cross-Site Request Forgery",
-    "distractors": [
+    "type": "identification",
+    "prompt": "What does CSRF stand for?",
+    "accepted_answers": ["Cross-Site Request Forgery", "CSRF"],
+    "options": [
+      "Cross-Site Request Forgery",
       "Cross-Site Resource Fetch",
       "Client-Side Request Failure",
       "Credential Session Request Forgery"
     ]
+  },
+  {
+    "type": "multiple_select",
+    "prompt": "Which are symmetric encryption algorithms?",
+    "accepted_answers": ["AES", "ChaCha20"],
+    "options": [
+      "AES",
+      "RSA",
+      "ChaCha20",
+      "ECDSA"
+    ]
   }
 ]`;
+
+const LLM_JSON_PROMPT = `Generate a SentinelQuiz JSON array for the topic I provide.
+
+Return only valid JSON. Do not include markdown, comments, explanations, or trailing commas.
+
+Each array item must match one of these schemas:
+
+Identification:
+{
+  "type": "identification",
+  "prompt": "A clear question or recall prompt",
+  "accepted_answers": ["Primary answer", "Common abbreviation or synonym"],
+  "options": ["Primary answer", "Distractor 1", "Distractor 2", "Distractor 3"]
+}
+
+Multiple choice:
+{
+  "type": "multiple_choice",
+  "prompt": "A clear question",
+  "accepted_answers": ["Exactly one correct answer"],
+  "options": ["Correct answer", "Distractor 1", "Distractor 2", "Distractor 3"]
+}
+
+Multiple select:
+{
+  "type": "multiple_select",
+  "prompt": "A clear question with more than one correct answer",
+  "accepted_answers": ["Correct answer 1", "Correct answer 2"],
+  "options": ["Correct answer 1", "Correct answer 2", "Distractor 1", "Distractor 2"]
+}
+
+Rules:
+- Generate the number of questions I request.
+- Use concise, unambiguous prompts.
+- Keep every string plain text, with no HTML.
+- For identification, include common aliases, abbreviations, and alternate phrasings in accepted_answers.
+- For multiple_choice, accepted_answers must contain exactly one string.
+- For multiple_select, accepted_answers must contain at least two strings.
+- options must include all accepted answers and plausible distractors.
+- identification and multiple_choice options must contain exactly 4 strings.
+- multiple_select options must contain at least 4 strings.
+- Avoid duplicate options within the same item.
+
+Topic: [replace with topic]
+Question count: [replace with count]
+Difficulty: [replace with difficulty]`;
 
 interface LogLine {
   id: number;
@@ -152,6 +202,15 @@ export default function ImportModule({ onImport }: ImportModuleProps) {
 
   const handleSubmit = () => {
     if (inputValue.trim()) processJSON(inputValue.trim());
+  };
+
+  const copyToClipboard = async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      addLog("success", `CLIPBOARD - ${label} copied`);
+    } catch {
+      addLog("error", `CLIPBOARD - Failed to copy ${label.toLowerCase()}`);
+    }
   };
 
   const logColor = {
@@ -284,12 +343,16 @@ export default function ImportModule({ onImport }: ImportModuleProps) {
           ← Load example JSON
         </button>
         <button
-          onClick={() => {
-            navigator.clipboard.writeText(EXAMPLE_JSON);
-          }}
+          onClick={() => copyToClipboard(EXAMPLE_JSON, "JSON format")}
           className="text-xs font-mono text-sentinel-muted hover:text-sentinel-accent transition-colors"
         >
           ⎘ Copy JSON format
+        </button>
+        <button
+          onClick={() => copyToClipboard(LLM_JSON_PROMPT, "LLM prompt")}
+          className="text-xs font-mono text-sentinel-muted hover:text-sentinel-accent transition-colors"
+        >
+          Copy LLM prompt
         </button>
       </div>
 
