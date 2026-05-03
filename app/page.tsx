@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import ImportModule from "@/components/ImportModule";
 import type { QuizItem, QuizMode } from "@/types/quiz";
+
 
 type AppPhase = "import" | "configure";
 
@@ -42,9 +43,7 @@ export default function HomePage() {
           <span className="tag hidden sm:inline-flex">v1.0</span>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="status-dot font-mono text-xs text-sentinel-muted">SYSTEM READY</span>
-        </div>
+        <OnlineStatus />
       </header>
 
       {/* Content */}
@@ -263,5 +262,35 @@ function ModeCard({
         </div>
       )}
     </button>
+  );
+}
+function OnlineStatus() {
+  const [online, setOnline] = useState(true);
+
+  useEffect(() => {
+    setOnline(navigator.onLine);
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
+    };
+  }, []);
+
+  return (
+    <div className="flex items-center gap-2">
+      <div
+        className={`w-2 h-2 rounded-full transition-colors ${
+          online
+            ? "bg-sentinel-accent shadow-[0_0_8px_var(--accent)] animate-pulse"
+            : "bg-sentinel-danger shadow-[0_0_8px_var(--danger)]"
+        }`}
+      />
+      <span className={`font-mono text-xs ${online ? "text-sentinel-muted" : "text-sentinel-danger"}`}>
+        {online ? "ONLINE" : "OFFLINE"}
+      </span>
+    </div>
   );
 }
