@@ -195,9 +195,7 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="border-t border-sentinel-border px-6 py-4 font-mono text-xs text-sentinel-muted flex items-center justify-between">
         <span>SentinelQuiz v1.0</span>
-        <span className="hidden sm:block">
-          Next.js · Supabase · Zod · DOMPurify
-        </span>
+        <span>Developed by Lancelot Gultiano</span>
       </footer>
     </main>
   );

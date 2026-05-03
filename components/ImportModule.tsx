@@ -276,12 +276,22 @@ export default function ImportModule({ onImport }: ImportModuleProps) {
       </div>
 
       {/* Example JSON hint */}
-      <button
-        onClick={() => setInputValue(EXAMPLE_JSON)}
-        className="text-xs font-mono text-sentinel-muted hover:text-sentinel-accent transition-colors"
-      >
-        ← Load example JSON
-      </button>
+      <div className="flex items-center gap-4">
+        <button
+          onClick={() => setInputValue(EXAMPLE_JSON)}
+          className="text-xs font-mono text-sentinel-muted hover:text-sentinel-accent transition-colors"
+        >
+          ← Load example JSON
+        </button>
+        <button
+          onClick={() => {
+            navigator.clipboard.writeText(EXAMPLE_JSON);
+          }}
+          className="text-xs font-mono text-sentinel-muted hover:text-sentinel-accent transition-colors"
+        >
+          ⎘ Copy JSON format
+        </button>
+      </div>
 
       {/* Security log terminal */}
       <AnimatePresence>
