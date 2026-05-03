@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { normalizeAnswer } from "@/lib/answers";
 import type { QuizItem } from "@/types/quiz";
 
 interface MultipleSelectModeProps {
@@ -30,8 +31,9 @@ export default function MultipleSelectMode({
   }, [item.id]);
 
   const handleHint = () => {
+    const correctChoices = new Set(item.accepted_answers.map(normalizeAnswer));
     const wrong = choices.filter(
-      (choice) => !item.accepted_answers.includes(choice) && !eliminated.has(choice)
+      (choice) => !correctChoices.has(normalizeAnswer(choice)) && !eliminated.has(choice)
     );
     if (wrong.length > 0) {
       const toEliminate = wrong[Math.floor(Math.random() * wrong.length)];

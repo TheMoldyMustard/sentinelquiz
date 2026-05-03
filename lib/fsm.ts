@@ -18,7 +18,7 @@ import type {
   QuizState,
 } from "@/types/quiz";
 import { calculatePoints } from "@/types/quiz";
-import { checkAnswer } from "@/lib/answers";
+import { checkAnswer, normalizeAnswer } from "@/lib/answers";
 
 // ─── Initial State ────────────────────────────────────────────────────────────
 
@@ -86,12 +86,13 @@ export function fsmReducer(ctx: FSMContext, event: FSMEvent): FSMContext {
 
       const currentItem = ctx.items[ctx.currentIndex];
       const hintUsed = ctx.state === "hint_used";
-      const isCorrect = checkAnswer(event.answer, currentItem.accepted_answers);
+      const acceptedAnswers = getVisibleAcceptedAnswers(currentItem);
+      const isCorrect = checkAnswer(event.answer, acceptedAnswers);
       const pointsEarned = isCorrect ? calculatePoints(currentItem.type, hintUsed) : 0;
       const answerRecord = {
         itemId: currentItem.id,
         question: currentItem.prompt,
-        correctAnswer: currentItem.accepted_answers.join(", "),
+        correctAnswer: acceptedAnswers.join(", "),
         userAnswer: Array.isArray(event.answer)
           ? event.answer.join(", ")
           : event.answer,
@@ -190,13 +191,34 @@ function resolveQuestionModes(
   selectedModes: QuestionType[]
 ): QuizItem[] {
   return items.map((item) => {
-    if (selectedModes.includes(item.type)) return item;
+    if (selectedModes.includes(item.type)) return ensureChoiceAnswerVisible(item);
 
-    return {
+    return ensureChoiceAnswerVisible({
       ...item,
       type: selectedModes[Math.floor(Math.random() * selectedModes.length)],
-    };
+    });
   });
+}
+
+function ensureChoiceAnswerVisible(item: QuizItem): QuizItem {
+  if (item.type === "identification") return item;
+  if (getVisibleAcceptedAnswers(item).length > 0) return item;
+
+  return {
+    ...item,
+    options: [item.accepted_answers[0], ...item.options.slice(1)],
+  };
+}
+
+function getVisibleAcceptedAnswers(item: QuizItem): string[] {
+  if (item.type === "identification") return item.accepted_answers;
+
+  const normalizedOptions = new Set(item.options.map(normalizeAnswer));
+  const visibleAnswers = item.accepted_answers.filter((answer) =>
+    normalizedOptions.has(normalizeAnswer(answer))
+  );
+
+  return visibleAnswers.length > 0 ? visibleAnswers : item.accepted_answers.slice(0, 1);
 }
 
 export function getCurrentItem(ctx: FSMContext): QuizItem | undefined {

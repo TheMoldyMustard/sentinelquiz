@@ -7,6 +7,7 @@ import IdentificationMode from "./IdentificationMode";
 import MultipleChoiceMode from "./MultipleChoiceMode";
 import MultipleSelectMode from "./MultipleSelectMode";
 import ScoreDisplay from "./ScoreDisplay";
+import { normalizeAnswer } from "@/lib/answers";
 import type { QuestionType, QuizItem, QuizMode } from "@/types/quiz";
 
 interface QuizEngineProps {
@@ -47,6 +48,9 @@ export default function QuizEngine({
   }, [onReset]);
 
   const currentItem = getCurrentItem(ctx);
+  const visibleAcceptedAnswers = currentItem
+    ? getVisibleAcceptedAnswers(currentItem)
+    : [];
   const progress = getProgress(ctx);
   const stats = ctx.state === "complete" ? getFinalStats(ctx) : null;
 
@@ -165,7 +169,7 @@ export default function QuizEngine({
                 <div className="space-y-1">
                   <span className="section-label">Correct Answer</span>
                   <p className="font-mono text-sm text-sentinel-accent">
-                    {currentItem.accepted_answers.join(", ")}
+                    {visibleAcceptedAnswers.join(", ")}
                   </p>
                 </div>
               )}
@@ -187,4 +191,15 @@ export default function QuizEngine({
       </AnimatePresence>
     </div>
   );
+}
+
+function getVisibleAcceptedAnswers(item: QuizItem): string[] {
+  if (item.type === "identification") return item.accepted_answers;
+
+  const normalizedOptions = new Set(item.options.map(normalizeAnswer));
+  const visibleAnswers = item.accepted_answers.filter((answer) =>
+    normalizedOptions.has(normalizeAnswer(answer))
+  );
+
+  return visibleAnswers.length > 0 ? visibleAnswers : item.accepted_answers.slice(0, 1);
 }
